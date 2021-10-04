@@ -10,7 +10,7 @@ int main(int argc, char **argv) {
 	struct udev *udev;
 	struct udev_enumerate *enumerate;
 	struct udev_list_entry *devices, *dev_list_entry;
-	int opt, show_all_properties, grep_output;
+	int opt, show_all_properties, grep_output, show_udev_rule;
 	char *query_subsystem, *wildcard;
 	
 	
@@ -18,7 +18,8 @@ int main(int argc, char **argv) {
 	wildcard = 0;
 	show_all_properties = 0;
 	grep_output = 0;
-	while ((opt = getopt (argc, argv, "hs:pG")) != -1) {
+	show_udev_rule = 0;
+	while ((opt = getopt (argc, argv, "hs:pGU")) != -1) {
 		switch (opt) {
 			case 'h':
 // 				help();
@@ -31,6 +32,9 @@ int main(int argc, char **argv) {
 				break;
 			case 'G':
 				grep_output = 1;
+				break;
+			case 'U':
+				show_udev_rule = 1;
 				break;
 		}
 	}
@@ -120,7 +124,29 @@ int main(int argc, char **argv) {
 					
 					value = udev_device_get_property_value(dev, "ID_MODEL");
 					if (value)
-						printf("%s  %s\n", prefix, value);
+						printf("%s  MODEL=%s\n", prefix, value);
+					
+					value = udev_device_get_property_value(dev, "ID_BUS");
+					if (value && !strcmp(value, "usb")) {
+						const char *vendor, *model;
+						vendor = udev_device_get_property_value(dev, "ID_VENDOR_ID");
+						if (vendor)
+							printf("%s  VENDOR_ID=%s\n", prefix, vendor);
+						
+						model = udev_device_get_property_value(dev, "ID_MODEL_ID");
+						if (model)
+							printf("%s  MODEL_ID=%s\n", prefix, model);
+						
+						if (show_udev_rule) {
+							printf("%s  RULE=SUBSYSTEM==\"%s\", ATTRS{idVendor}==\"%s\", ATTRS{idProduct}==\"%s\"", prefix, subsystem, vendor, model);
+							
+							value = udev_device_get_property_value(dev, "ID_USB_INTERFACE_NUM");
+							if (value)
+								printf(", ENV{ID_USB_INTERFACE_NUM}==\"%s\"", value);
+							
+							printf(",\n");
+						}
+					}
 				}
 				
 				if (show_all_properties) {
