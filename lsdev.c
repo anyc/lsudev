@@ -6,24 +6,42 @@
 
 #include <libudev.h>
 
+void help(char **argv) {
+	fprintf(stdout, "Usage: %s [args] [search_string]\n", argv[0]);
+	fprintf(stdout, "\n");
+	fprintf(stdout, "lsudev provides easy access to the udev device database.\n");
+	fprintf(stdout, "\n");
+	fprintf(stdout, "Args:\n");
+	fprintf(stdout, "  -h             show help\n");
+	fprintf(stdout, "  -a             include devices without entry in /dev\n");
+	fprintf(stdout, "  -s <subsystem> limit search to this subsystem\n");
+	fprintf(stdout, "  -p             show all properties of a device\n");
+	fprintf(stdout, "  -G             make output grep friendly\n");
+	fprintf(stdout, "  -U             show relevant parts for a udev rule\n");
+}
+
 int main(int argc, char **argv) {
 	struct udev *udev;
 	struct udev_enumerate *enumerate;
 	struct udev_list_entry *devices, *dev_list_entry;
-	int opt, show_all_properties, grep_output, show_udev_rule;
+	int opt, show_all_properties, grep_output, show_udev_rule, show_all_devices;
 	char *query_subsystem, *wildcard;
 	
 	
+	show_all_devices = 0;
 	query_subsystem = 0;
 	wildcard = 0;
 	show_all_properties = 0;
 	grep_output = 0;
 	show_udev_rule = 0;
-	while ((opt = getopt (argc, argv, "hs:pGU")) != -1) {
+	while ((opt = getopt (argc, argv, "has:pGU")) != -1) {
 		switch (opt) {
 			case 'h':
-// 				help();
+				help(argv);
 				return 0;
+			case 'a':
+				show_all_devices = 1;
+				break;
 			case 's':
 				query_subsystem = strdup(optarg);
 				break;
@@ -88,10 +106,19 @@ int main(int argc, char **argv) {
 			show = 1;
 		}
 		
-		if (udev_device_get_devnode(dev)) {
-			if (!show && (strstr(udev_device_get_devnode(dev), wildcard)))
-					show = 1;
-			if (!show && (strstr(udev_device_get_devpath(dev), wildcard)))
+		if (udev_device_get_devnode(dev) || show_all_devices) {
+			char buf[512];
+			const char *name;
+			
+			name = udev_device_get_devnode(dev);
+			if (!name) {
+				snprintf(buf, sizeof(buf), "/sys%s", udev_device_get_devpath(dev));
+				name = buf;
+			}
+			
+			if (!show && (strstr(name, wildcard)))
+				show = 1;
+			if (!show && (strstr(name, wildcard)))
 				show = 1;
 			if (!show) {
 				udev_list_entry_foreach(entry, udev_device_get_properties_list_entry(dev)) {
@@ -106,9 +133,9 @@ int main(int argc, char **argv) {
 			
 			if (show) {
 				if (grep_output) {
-					prefix = udev_device_get_devnode(dev);
+					prefix = name;
 				} else {
-					printf("%s\n", udev_device_get_devnode(dev));
+					printf("%s\n", name);
 					prefix = "";
 				}
 				
@@ -120,7 +147,8 @@ int main(int argc, char **argv) {
 					if (dev_parent)
 						printf("%s  DRIVER=%s\n", prefix, udev_device_get_driver(dev_parent));
 				} else {
-					printf("%s  /sys%s\n", prefix, udev_device_get_devpath(dev));
+					if (udev_device_get_devnode(dev))
+						printf("%s  /sys%s\n", prefix, udev_device_get_devpath(dev));
 					
 					value = udev_device_get_property_value(dev, "ID_MODEL");
 					if (value)
