@@ -51,7 +51,7 @@ void print_udev_rule(struct udev_device *dev, const char *prefix) {
 		vendor = udev_device_get_property_value(dev, "ID_VENDOR_ID");
 		model = udev_device_get_property_value(dev, "ID_MODEL_ID");
 		
-		printf("%s  RULE=SUBSYSTEM==\"%s\", ATTRS{idVendor}==\"%s\", ATTRS{idProduct}==\"%s\"", prefix, subsystem, vendor, model);
+		printf("%s  BUS_RULE=SUBSYSTEM==\"%s\", ATTRS{idVendor}==\"%s\", ATTRS{idProduct}==\"%s\"", prefix, subsystem, vendor, model);
 		
 		value = udev_device_get_property_value(dev, "ID_USB_INTERFACE_NUM");
 		if (value)
@@ -61,12 +61,19 @@ void print_udev_rule(struct udev_device *dev, const char *prefix) {
 	}
 }
 
-#define RULE_ENV 0
-#define RULE_ATTR 1
+#define RULE_NONE 0
+#define RULE_ENV 1
+#define RULE_ATTR 2
 
 void print_key(const char *prefix, const char *key, const char *value, int env_or_attr, int show_udev_rule) {
 	if (show_udev_rule) {
-		printf("%s  %s{%s}==\"%s\"\n", prefix, env_or_attr?"ATTR":"ENV", key, value);
+		printf("%s  %s%s%s==\"%s\"\n",
+			prefix,
+			env_or_attr == 0 ? "" : (env_or_attr == 1 ? "ATTR{":"ENV{"),
+			key,
+			env_or_attr == 0 ? "" : "}",
+			value
+			);
 	} else {
 		printf("%s  %s = %s\n", prefix, key, value);
 	}
@@ -192,8 +199,8 @@ int main(int argc, char **argv) {
 				}
 				
 				if (show_all_properties) {
-					print_key(prefix, "KERNEL", udev_device_get_sysname(dev), RULE_ENV, show_udev_rule);
-					print_key(prefix, "DEVTYPE", udev_device_get_devtype(dev), RULE_ENV, show_udev_rule);
+					print_key(prefix, "KERNEL", udev_device_get_sysname(dev), RULE_NONE, show_udev_rule);
+					print_key(prefix, "DEVTYPE", udev_device_get_devtype(dev), RULE_NONE, show_udev_rule);
 					
 					dev_parent = udev_device_get_parent(dev);
 					if (dev_parent)
