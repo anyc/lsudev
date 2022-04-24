@@ -1,4 +1,6 @@
 
+CFLAGS+=-Wall
+
 PKG_CONFIG?=pkg-config
 
 CFLAGS+=$(shell $(PKG_CONFIG) --cflags libudev)

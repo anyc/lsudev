@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
 	}
 	
 	udev_list_entry_foreach(dev_list_entry, devices) {
-		const char *path, *tmp, *subsystem;
+		const char *path, *subsystem;
 		struct udev_device *dev, *dev_parent;
 		int show;
 		struct udev_list_entry *entry;
