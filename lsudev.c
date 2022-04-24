@@ -26,6 +26,7 @@ const char *selected_props[] = {
 	"ID_VENDOR_ID",
 	"ID_MODEL_ID",
 	"ID_NET_NAME_PATH",
+	"ID_MODEL_FROM_DATABASE",
 	0,
 };
 
@@ -39,6 +40,13 @@ void print_udev_rule(struct udev_device *dev, const char *prefix) {
 	
 	subsystem = udev_device_get_subsystem(dev);
 	
+	value = udev_device_get_devnode(dev);
+	if (value) {
+		value = udev_device_get_sysname(dev);
+		printf("%s  RULE_DEV_OWNER=ACTION==\"add\", SUBSYSTEM==\"%s\", KERNEL==\"%s\", OWNER=\"<new_owner>\", GROUP=\"<new_group>\", MODE=\"0660\"\n", prefix, subsystem, value);
+		printf("%s  RULE_DEV_SYMLINK=ACTION==\"add\", SUBSYSTEM==\"%s\", KERNEL==\"%s\", SYMLINK+=\"<new_name>\"\n", prefix, subsystem, value);
+	}
+	
 	value = udev_device_get_property_value(dev, "ID_BUS");
 	if (
 		value && (
@@ -51,13 +59,19 @@ void print_udev_rule(struct udev_device *dev, const char *prefix) {
 		vendor = udev_device_get_property_value(dev, "ID_VENDOR_ID");
 		model = udev_device_get_property_value(dev, "ID_MODEL_ID");
 		
-		printf("%s  BUS_RULE=SUBSYSTEM==\"%s\", ATTRS{idVendor}==\"%s\", ATTRS{idProduct}==\"%s\"", prefix, subsystem, vendor, model);
+		printf("%s  RULE_BUS_TEMPLATE=ACTION==\"add\", SUBSYSTEM==\"%s\", ATTRS{idVendor}==\"%s\", ATTRS{idProduct}==\"%s\"", prefix, subsystem, vendor, model);
 		
 		value = udev_device_get_property_value(dev, "ID_USB_INTERFACE_NUM");
 		if (value)
 			printf(", ENV{ID_USB_INTERFACE_NUM}==\"%s\"", value);
 		
 		printf(",\n");
+	}
+	
+	value = udev_device_get_sysattr_value(dev, "address");
+	if (value) {
+		printf("%s  RULE_NET_NAME=ACTION==\"add\", SUBSYSTEM==\"%s\", ATTRS{address}==\"%s\", NAME=\"<new_name>\"\n", prefix, subsystem, value);
+		printf("%s  RULE_NET_MAC=ACTION==\"add\", SUBSYSTEM==\"%s\", ATTRS{address}==\"%s\", PROGRAM=\"/sbin/ip link set %%k address <new_mac>\"\n", prefix, subsystem, value);
 	}
 }
 
