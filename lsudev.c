@@ -20,6 +20,33 @@ void help(char **argv) {
 	fprintf(stdout, "  -U             show relevant parts for a udev rule\n");
 }
 
+void print_udev_rule(struct udev_device *dev, const char *prefix) {
+	const char *value, *subsystem;
+	
+	subsystem = udev_device_get_subsystem(dev);
+	
+	value = udev_device_get_property_value(dev, "ID_BUS");
+	if (
+		value && (
+			!strcmp(value, "usb")
+			|| !strcmp(value, "pci")
+		)
+	)
+	{
+		const char *vendor, *model;
+		vendor = udev_device_get_property_value(dev, "ID_VENDOR_ID");
+		model = udev_device_get_property_value(dev, "ID_MODEL_ID");
+		
+		printf("%s  RULE=SUBSYSTEM==\"%s\", ATTRS{idVendor}==\"%s\", ATTRS{idProduct}==\"%s\"", prefix, subsystem, vendor, model);
+		
+		value = udev_device_get_property_value(dev, "ID_USB_INTERFACE_NUM");
+		if (value)
+			printf(", ENV{ID_USB_INTERFACE_NUM}==\"%s\"", value);
+		
+		printf(",\n");
+	}
+}
+
 int main(int argc, char **argv) {
 	struct udev *udev;
 	struct udev_enumerate *enumerate;
@@ -170,16 +197,6 @@ int main(int argc, char **argv) {
 						model = udev_device_get_property_value(dev, "ID_MODEL_ID");
 						if (model)
 							printf("%s  MODEL_ID=%s\n", prefix, model);
-						
-						if (show_udev_rule) {
-							printf("%s  RULE=SUBSYSTEM==\"%s\", ATTRS{idVendor}==\"%s\", ATTRS{idProduct}==\"%s\"", prefix, subsystem, vendor, model);
-							
-							value = udev_device_get_property_value(dev, "ID_USB_INTERFACE_NUM");
-							if (value)
-								printf(", ENV{ID_USB_INTERFACE_NUM}==\"%s\"", value);
-							
-							printf(",\n");
-						}
 					}
 				}
 				
@@ -203,6 +220,10 @@ int main(int argc, char **argv) {
 						
 						printf("%s  %s = %s\n", prefix, key, value);
 					}
+				}
+				
+				if (show_udev_rule) {
+					print_udev_rule(dev, prefix);
 				}
 			}
 		}
