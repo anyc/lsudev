@@ -13,6 +13,7 @@ struct lsudev {
 	char grep_output;
 	char show_udev_rule;
 	char show_all_devices;
+	char show_children;
 	char *query_subsystem;
 	char *wildcard;
 };
@@ -25,6 +26,7 @@ void help(char **argv) {
 	fprintf(stdout, "Args:\n");
 	fprintf(stdout, "  -h             show help\n");
 	fprintf(stdout, "  -a             include devices without entry in /dev\n");
+	fprintf(stdout, "  -c             show children of device\n");
 	fprintf(stdout, "  -s <subsystem> limit search to this subsystem\n");
 	fprintf(stdout, "  -p             show all properties of a device\n");
 	fprintf(stdout, "  -G             make output grep friendly\n");
@@ -43,6 +45,7 @@ const char *selected_props[] = {
 
 const char *selected_attrs[] = {
 	"address",
+	"interface",
 	0,
 };
 
@@ -104,7 +107,7 @@ void print_key(const char *prefix, const char *key, const char *value, int env_o
 	}
 }
 
-int process_device(struct lsudev *lsudev, struct udev_list_entry *dev_list_entry) {
+int process_device(struct lsudev *lsudev, struct udev_list_entry *dev_list_entry, char level) {
 	const char *path, *subsystem;
 	struct udev_device *dev, *dev_parent;
 	int show;
@@ -118,14 +121,18 @@ int process_device(struct lsudev *lsudev, struct udev_list_entry *dev_list_entry
 	dev = udev_device_new_from_syspath(lsudev->udev, path);
 	
 	subsystem = udev_device_get_subsystem(dev);
-	if (lsudev->query_subsystem && strcmp(lsudev->query_subsystem, subsystem)) {
-		udev_device_unref(dev);
-		return 1;
-	}
-	
-	if (lsudev->wildcard) {
-		if (strstr(subsystem, lsudev->wildcard))
+	if (level == 0) {
+		if (lsudev->query_subsystem && strcmp(lsudev->query_subsystem, subsystem)) {
+			udev_device_unref(dev);
+			return 1;
+		}
+		
+		if (lsudev->wildcard) {
+			if (strstr(subsystem, lsudev->wildcard))
+				show = 1;
+		} else {
 			show = 1;
+		}
 	} else {
 		show = 1;
 	}
@@ -140,8 +147,6 @@ int process_device(struct lsudev *lsudev, struct udev_list_entry *dev_list_entry
 			name = buf;
 		}
 		
-		if (!show && (strstr(name, lsudev->wildcard)))
-			show = 1;
 		if (!show && (strstr(name, lsudev->wildcard)))
 			show = 1;
 		if (!show) {
@@ -221,6 +226,77 @@ int process_device(struct lsudev *lsudev, struct udev_list_entry *dev_list_entry
 			if (lsudev->show_udev_rule) {
 				print_udev_rule(dev, prefix);
 			}
+			
+			if (lsudev->wildcard && level == 0) {
+				struct udev_enumerate *enumerate_children;
+				struct udev_list_entry *child_devices, *child_dev_list_entry;
+				struct udev_device *child_dev;
+				const char *child_subsystem, *child_name;
+				int rv;
+				unsigned int n_children;
+				char child_buf[512];
+				
+				
+				enumerate_children = udev_enumerate_new(lsudev->udev);
+				if (!enumerate_children) {
+					fprintf(stderr, "error: udev_enumerate_new() failed\n");
+					return 1;
+				}
+				
+				rv = udev_enumerate_add_match_parent(enumerate_children, dev);
+				if (rv) {
+					fprintf(stderr, "error: udev_enumerate_add_match_parent() failed\n");
+					return -1;
+				}
+				
+				udev_enumerate_scan_devices(enumerate_children);
+				
+				child_devices = udev_enumerate_get_list_entry(enumerate_children);
+				if (!child_devices) {
+					fprintf(stderr, "error: udev_enumerate_get_list_entry() failed\n");
+					return -1;
+				}
+				
+				n_children = 0;
+				udev_list_entry_foreach(child_dev_list_entry, child_devices) {
+					if (!strcmp(udev_list_entry_get_name(child_dev_list_entry), path))
+						continue;
+					
+					n_children += 1;
+					
+					if (!lsudev->show_children)
+						continue;
+					
+					/*
+					 * check if our parent enumeration will already show this child
+					 */
+					
+					child_dev = udev_device_new_from_syspath(lsudev->udev, udev_list_entry_get_name(child_dev_list_entry));
+					
+					child_subsystem = udev_device_get_subsystem(child_dev);
+					
+					child_name = udev_device_get_devnode(child_dev);
+					if (!child_name) {
+						snprintf(child_buf, sizeof(child_buf), "/sys%s", udev_device_get_devpath(child_dev));
+						child_name = child_buf;
+					}
+					
+					if (strstr(child_subsystem, lsudev->wildcard))
+						continue;
+					if (strstr(child_name, lsudev->wildcard))
+						continue;
+					
+					process_device(lsudev, child_dev_list_entry, level + 1);
+				}
+				
+				udev_enumerate_unref(enumerate_children);
+				
+				if (!lsudev->show_children) {
+					char buf[64];
+					snprintf(buf, sizeof(buf), "%u", n_children);
+					print_key(prefix, "lsudev_child_devices", buf, RULE_NONE, 0);
+				}
+			}
 		}
 	}
 	
@@ -236,13 +312,16 @@ int main(int argc, char **argv) {
 	struct lsudev lsudev = {0};
 	
 	
-	while ((opt = getopt (argc, argv, "has:pGU")) != -1) {
+	while ((opt = getopt (argc, argv, "hacs:pGU")) != -1) {
 		switch (opt) {
 			case 'h':
 				help(argv);
 				return 0;
 			case 'a':
 				lsudev.show_all_devices = 1;
+				break;
+			case 'c':
+				lsudev.show_children = 1;
 				break;
 			case 's':
 				lsudev.query_subsystem = strdup(optarg);
@@ -283,7 +362,7 @@ int main(int argc, char **argv) {
 	}
 	
 	udev_list_entry_foreach(dev_list_entry, devices) {
-		process_device(&lsudev, dev_list_entry);
+		process_device(&lsudev, dev_list_entry, 0);
 	}
 	
 	udev_enumerate_unref(enumerate);
