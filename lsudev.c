@@ -6,6 +6,17 @@
 
 #include <libudev.h>
 
+struct lsudev {
+	struct udev *udev;
+	
+	char show_all_properties;
+	char grep_output;
+	char show_udev_rule;
+	char show_all_devices;
+	char *query_subsystem;
+	char *wildcard;
+};
+
 void help(char **argv) {
 	fprintf(stdout, "Usage: %s [args] [search_string]\n", argv[0]);
 	fprintf(stdout, "\n");
@@ -93,53 +104,171 @@ void print_key(const char *prefix, const char *key, const char *value, int env_o
 	}
 }
 
+int process_device(struct lsudev *lsudev, struct udev_list_entry *dev_list_entry) {
+	const char *path, *subsystem;
+	struct udev_device *dev, *dev_parent;
+	int show;
+	struct udev_list_entry *entry;
+	const char *key, *value, *prefix;
+	
+	
+	show = 0;
+	
+	path = udev_list_entry_get_name(dev_list_entry);
+	dev = udev_device_new_from_syspath(lsudev->udev, path);
+	
+	subsystem = udev_device_get_subsystem(dev);
+	if (lsudev->query_subsystem && strcmp(lsudev->query_subsystem, subsystem)) {
+		udev_device_unref(dev);
+		return 1;
+	}
+	
+	if (lsudev->wildcard) {
+		if (strstr(subsystem, lsudev->wildcard))
+			show = 1;
+	} else {
+		show = 1;
+	}
+	
+	if (udev_device_get_devnode(dev) || lsudev->show_all_devices) {
+		char buf[512];
+		const char *name;
+		
+		name = udev_device_get_devnode(dev);
+		if (!name) {
+			snprintf(buf, sizeof(buf), "/sys%s", udev_device_get_devpath(dev));
+			name = buf;
+		}
+		
+		if (!show && (strstr(name, lsudev->wildcard)))
+			show = 1;
+		if (!show && (strstr(name, lsudev->wildcard)))
+			show = 1;
+		if (!show) {
+			udev_list_entry_foreach(entry, udev_device_get_properties_list_entry(dev)) {
+				value = udev_list_entry_get_value(entry);
+				
+				if (!show && (strstr(value, lsudev->wildcard))) {
+					show = 1;
+					break;
+				}
+			}
+		}
+		
+		if (show) {
+			if (lsudev->grep_output) {
+				prefix = name;
+			} else {
+				printf("%s\n", name);
+				prefix = "";
+			}
+			
+			if (lsudev->show_all_properties) {
+				print_key(prefix, "KERNEL", udev_device_get_sysname(dev), RULE_NONE, lsudev->show_udev_rule);
+				print_key(prefix, "DEVTYPE", udev_device_get_devtype(dev), RULE_NONE, lsudev->show_udev_rule);
+				
+				dev_parent = udev_device_get_parent(dev);
+				if (dev_parent)
+					print_key(prefix, "DRIVER", udev_device_get_driver(dev_parent), RULE_ENV, lsudev->show_udev_rule);
+			} else {
+				const char **iter;
+				
+				if (udev_device_get_devnode(dev))
+					printf("%s  /sys%s\n", prefix, udev_device_get_devpath(dev));
+				
+				iter = selected_props;
+				while (*iter) {
+					value = udev_device_get_property_value(dev, *iter);
+					if (value)
+						print_key(prefix, *iter, value, RULE_ENV, lsudev->show_udev_rule);
+					
+					iter++;
+				}
+				
+				iter = selected_attrs;
+				while (*iter) {
+					value = udev_device_get_sysattr_value(dev, *iter);
+					if (value)
+						print_key(prefix, *iter, value, RULE_ATTR, lsudev->show_udev_rule);
+					
+					iter++;
+				}
+			}
+			
+			if (lsudev->show_all_properties) {
+				udev_list_entry_foreach(entry, udev_device_get_properties_list_entry(dev)) {
+					key = udev_list_entry_get_name(entry);
+					value = udev_list_entry_get_value(entry);
+					
+					print_key(prefix, key, value, RULE_ENV, lsudev->show_udev_rule);
+				}
+				
+				udev_list_entry_foreach(entry, udev_device_get_sysattr_list_entry(dev)) {
+					key = udev_list_entry_get_name(entry);
+					
+					if (!strcmp(key, "uevent"))
+						continue;
+					
+					value = udev_device_get_sysattr_value(dev, key);
+					
+					if (!value)
+						continue;
+					
+					print_key(prefix, key, value, RULE_ATTR, lsudev->show_udev_rule);
+				}
+			}
+			
+			if (lsudev->show_udev_rule) {
+				print_udev_rule(dev, prefix);
+			}
+		}
+	}
+	
+	udev_device_unref(dev);
+	
+	return 0;
+}
+
 int main(int argc, char **argv) {
-	struct udev *udev;
 	struct udev_enumerate *enumerate;
 	struct udev_list_entry *devices, *dev_list_entry;
-	int opt, show_all_properties, grep_output, show_udev_rule, show_all_devices;
-	char *query_subsystem, *wildcard;
+	int opt;
+	struct lsudev lsudev = {0};
 	
 	
-	show_all_devices = 0;
-	query_subsystem = 0;
-	wildcard = 0;
-	show_all_properties = 0;
-	grep_output = 0;
-	show_udev_rule = 0;
 	while ((opt = getopt (argc, argv, "has:pGU")) != -1) {
 		switch (opt) {
 			case 'h':
 				help(argv);
 				return 0;
 			case 'a':
-				show_all_devices = 1;
+				lsudev.show_all_devices = 1;
 				break;
 			case 's':
-				query_subsystem = strdup(optarg);
+				lsudev.query_subsystem = strdup(optarg);
 				break;
 			case 'p':
-				show_all_properties = 1;
+				lsudev.show_all_properties = 1;
 				break;
 			case 'G':
-				grep_output = 1;
+				lsudev.grep_output = 1;
 				break;
 			case 'U':
-				show_udev_rule = 1;
+				lsudev.show_udev_rule = 1;
 				break;
 		}
 	}
 	
 	if (optind < argc)
-		wildcard = argv[optind];
+		lsudev.wildcard = argv[optind];
 	
-	udev = udev_new();
-	if (!udev) {
+	lsudev.udev = udev_new();
+	if (!lsudev.udev) {
 		fprintf(stderr, "error: udev_new() failed\n");
 		return 1;
 	}
 	
-	enumerate = udev_enumerate_new(udev);
+	enumerate = udev_enumerate_new(lsudev.udev);
 	if (!enumerate) {
 		fprintf(stderr, "error: udev_enumerate_new() failed\n");
 		return 1;
@@ -154,130 +283,11 @@ int main(int argc, char **argv) {
 	}
 	
 	udev_list_entry_foreach(dev_list_entry, devices) {
-		const char *path, *subsystem;
-		struct udev_device *dev, *dev_parent;
-		int show;
-		struct udev_list_entry *entry;
-		const char *key, *value, *prefix;
-		
-		
-		show = 0;
-		
-		path = udev_list_entry_get_name(dev_list_entry);
-		dev = udev_device_new_from_syspath(udev, path);
-		
-		subsystem = udev_device_get_subsystem(dev);
-		if (query_subsystem && strcmp(query_subsystem, subsystem)) {
-			udev_device_unref(dev);
-			continue;
-		}
-		
-		if (wildcard) {
-			if (strstr(subsystem, wildcard))
-				show = 1;
-		} else {
-			show = 1;
-		}
-		
-		if (udev_device_get_devnode(dev) || show_all_devices) {
-			char buf[512];
-			const char *name;
-			
-			name = udev_device_get_devnode(dev);
-			if (!name) {
-				snprintf(buf, sizeof(buf), "/sys%s", udev_device_get_devpath(dev));
-				name = buf;
-			}
-			
-			if (!show && (strstr(name, wildcard)))
-				show = 1;
-			if (!show && (strstr(name, wildcard)))
-				show = 1;
-			if (!show) {
-				udev_list_entry_foreach(entry, udev_device_get_properties_list_entry(dev)) {
-					value = udev_list_entry_get_value(entry);
-					
-					if (!show && (strstr(value, wildcard))) {
-						show = 1;
-						break;
-					}
-				}
-			}
-			
-			if (show) {
-				if (grep_output) {
-					prefix = name;
-				} else {
-					printf("%s\n", name);
-					prefix = "";
-				}
-				
-				if (show_all_properties) {
-					print_key(prefix, "KERNEL", udev_device_get_sysname(dev), RULE_NONE, show_udev_rule);
-					print_key(prefix, "DEVTYPE", udev_device_get_devtype(dev), RULE_NONE, show_udev_rule);
-					
-					dev_parent = udev_device_get_parent(dev);
-					if (dev_parent)
-						print_key(prefix, "DRIVER", udev_device_get_driver(dev_parent), RULE_ENV, show_udev_rule);
-				} else {
-					const char **iter;
-					
-					if (udev_device_get_devnode(dev))
-						printf("%s  /sys%s\n", prefix, udev_device_get_devpath(dev));
-					
-					iter = selected_props;
-					while (*iter) {
-						value = udev_device_get_property_value(dev, *iter);
-						if (value)
-							print_key(prefix, *iter, value, RULE_ENV, show_udev_rule);
-						
-						iter++;
-					}
-					
-					iter = selected_attrs;
-					while (*iter) {
-						value = udev_device_get_sysattr_value(dev, *iter);
-						if (value)
-							print_key(prefix, *iter, value, RULE_ATTR, show_udev_rule);
-						
-						iter++;
-					}
-				}
-				
-				if (show_all_properties) {
-					udev_list_entry_foreach(entry, udev_device_get_properties_list_entry(dev)) {
-						key = udev_list_entry_get_name(entry);
-						value = udev_list_entry_get_value(entry);
-						
-						print_key(prefix, key, value, RULE_ENV, show_udev_rule);
-					}
-					
-					udev_list_entry_foreach(entry, udev_device_get_sysattr_list_entry(dev)) {
-						key = udev_list_entry_get_name(entry);
-						
-						if (!strcmp(key, "uevent"))
-							continue;
-						
-						value = udev_device_get_sysattr_value(dev, key);
-						
-						if (!value)
-							continue;
-						
-						print_key(prefix, key, value, RULE_ATTR, show_udev_rule);
-					}
-				}
-				
-				if (show_udev_rule) {
-					print_udev_rule(dev, prefix);
-				}
-			}
-		}
-		
-		udev_device_unref(dev);
+		process_device(&lsudev, dev_list_entry);
 	}
 	
 	udev_enumerate_unref(enumerate);
-	udev_unref(udev);
+	udev_unref(lsudev.udev);
 	
 	return 0;
 }
