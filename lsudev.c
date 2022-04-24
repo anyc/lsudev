@@ -189,6 +189,20 @@ int main(int argc, char **argv) {
 						value = udev_list_entry_get_value(entry);
 						printf("%s  %s = %s\n", prefix, key, value);
 					}
+					
+					udev_list_entry_foreach(entry, udev_device_get_sysattr_list_entry(dev)) {
+						key = udev_list_entry_get_name(entry);
+						
+						if (!strcmp(key, "uevent"))
+							continue;
+						
+						value = udev_device_get_sysattr_value(dev, key);
+						
+						if (!value)
+							continue;
+						
+						printf("%s  %s = %s\n", prefix, key, value);
+					}
 				}
 			}
 		}
