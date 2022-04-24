@@ -27,7 +27,7 @@ struct lsudev {
 void help(char **argv) {
 	fprintf(stdout, "Usage: %s [args] [search_string]\n", argv[0]);
 	fprintf(stdout, "\n");
-	fprintf(stdout, "lsudev provides easy access to the udev device database.\n");
+	fprintf(stdout, "lsudev (v" VERSION ") provides easy access to the udev device database.\n");
 	fprintf(stdout, "\n");
 	fprintf(stdout, "Args:\n");
 	fprintf(stdout, "  -h             show help\n");
