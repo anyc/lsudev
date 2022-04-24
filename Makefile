@@ -1,4 +1,6 @@
 
+APP=lsudev
+
 CFLAGS+=-Wall
 
 PKG_CONFIG?=pkg-config
@@ -6,9 +8,9 @@ PKG_CONFIG?=pkg-config
 CFLAGS+=$(shell $(PKG_CONFIG) --cflags libudev)
 LDLIBS+=$(shell $(PKG_CONFIG) --libs libudev)
 
-all: lsdev
+all: $(APP)
 
-lsdev: lsdev.o
+$(APP): $(APP).o
 
 clean:
-	rm -rf lsdev *.o
+	rm -rf $(APP) *.o
