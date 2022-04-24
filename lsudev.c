@@ -34,12 +34,15 @@ void help(char **argv) {
 }
 
 const char *selected_props[] = {
+	"ID_VENDOR",
 	"ID_MODEL",
-	"ID_BUS",
 	"ID_VENDOR_ID",
 	"ID_MODEL_ID",
 	"ID_NET_NAME_PATH",
 	"ID_MODEL_FROM_DATABASE",
+	"ID_USB_CLASS_FROM_DATABASE",
+	"ID_USB_PROTOCOL_FROM_DATABASE",
+	"ID_USB_SUBCLASS_FROM_DATABASE",
 	0,
 };
 
