@@ -155,7 +155,13 @@ int main(int argc, char **argv) {
 						printf("%s  MODEL=%s\n", prefix, value);
 					
 					value = udev_device_get_property_value(dev, "ID_BUS");
-					if (value && !strcmp(value, "usb")) {
+					if (
+						value && (
+							!strcmp(value, "usb")
+							|| !strcmp(value, "pci")
+							)
+						)
+					{
 						const char *vendor, *model;
 						vendor = udev_device_get_property_value(dev, "ID_VENDOR_ID");
 						if (vendor)
